@@ -1,0 +1,16 @@
+#!/bin/sh
+set -e
+SRC=/usr/share/my-dev-env/helix
+
+# Prefer the human who ran sudo; otherwise whoever's running this (e.g. root)
+target="${SUDO_USER:-$(id -un)}"
+home=$(getent passwd "$target" | cut -d: -f6)
+dest="$home/.config/helix"
+
+mkdir -p "$dest"
+for f in config.toml languages.toml; do
+    [ -e "$dest/$f" ] || cp "$SRC/$f" "$dest/$f"
+done
+chown -R "$target":"$target" "$dest"
+exit 0
+
