@@ -1,0 +1,73 @@
+name: Build Helix config .deb
+
+on:
+  push:
+    tags: ["v*"]        # tag v1.2.3 -> versioned release
+  workflow_dispatch: {}  # or run it by hand
+
+permissions:
+  contents: write        # needed only for the release step
+
+env:
+  PKG_NAME: helix-config
+  CONFIG_SRC: hx.cfg                              # the file in your repo
+  CONFIG_DEST: /etc/skel/.config/helix/config.toml
+  MAINTAINER: "Arash <you@example.com>"
+
+jobs:
+  build-deb:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Determine version
+        run: |
+          if [[ "${GITHUB_REF}" == refs/tags/v* ]]; then
+            echo "VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+          else
+            echo "VERSION=0.0.0~$(date +%Y%m%d%H%M%S)" >> "$GITHUB_ENV"
+          fi
+
+      - name: Build .deb
+        run: |
+          set -euo pipefail
+          pkgdir="pkg/${PKG_NAME}"
+          rm -rf "$pkgdir"
+          install -d "$pkgdir/DEBIAN"
+
+          # control file (note the single leading space on the Description
+          # continuation line — required by the Debian control format)
+          printf '%s\n' \
+            "Package: ${PKG_NAME}" \
+            "Version: ${VERSION}" \
+            "Section: editors" \
+            "Priority: optional" \
+            "Architecture: all" \
+            "Maintainer: ${MAINTAINER}" \
+            "Description: Personal Helix editor configuration" \
+            " Installs a ready-to-use Helix config to ${CONFIG_DEST}." \
+            > "$pkgdir/DEBIAN/control"
+
+          # payload
+          install -D -m 0644 "${CONFIG_SRC}" "${pkgdir}${CONFIG_DEST}"
+
+          out="${PKG_NAME}_${VERSION}_all.deb"
+          dpkg-deb --root-owner-group --build "$pkgdir" "$out"
+          echo "DEB_FILE=$out" >> "$GITHUB_ENV"
+
+          echo "----- package info -----"
+          dpkg-deb --info "$out"
+          dpkg-deb --contents "$out"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.PKG_NAME }}_deb
+          path: ${{ env.DEB_FILE }}
+
+      - name: Attach to GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ env.DEB_FILE }}
+          
